@@ -1,93 +1,65 @@
-# cs336-ex2
+# CS336 Spring 2026 Assignment 2: Systems
 
+For a full description of the assignment, see the assignment handout at
+[cs336_assignment2_systems.pdf](./cs336_assignment2_systems.pdf)
 
+If you see any issues with the assignment handout or code, please feel free to
+raise a GitHub issue or open a pull request with a fix.
 
-## Getting started
+## Setup
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+This directory is organized as follows:
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- [`./cs336-basics`](./cs336-basics): directory containing a module
+  `cs336_basics` and its associated `pyproject.toml`. This module contains the staff 
+  implementation of the language model from assignment 1. If you want to use your own 
+  implementation, you can replace this directory with your own implementation.
+- [`./cs336_systems`](./cs336_systems): This folder is basically empty! This is the
+  module where you will implement your optimized Transformer language model. 
+  Feel free to take whatever code you need from assignment 1 (in `cs336-basics`) and copy it 
+  over as a starting point. In addition, you will implement distributed training and
+  optimization in this module.
 
-## Add your files
+Visually, it should look something like:
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+``` sh
+.
+├── cs336_basics  # A python module named cs336_basics
+│   ├── __init__.py
+│   └── ... other files in the cs336_basics module, taken from assignment 1 ...
+├── cs336_systems  # TODO(you): code that you'll write for assignment 2 
+│   ├── __init__.py
+│   └── ... TODO(you): any other files or folders you need for assignment 2 ...
+├── README.md
+├── pyproject.toml
+└── ... TODO(you): other files or folders you need for assignment 2 ...
 ```
-cd existing_repo
-git remote add origin https://gitlab.pele.local/tommerl/cs336-ex2.git
-git branch -M main
-git push -uf origin main
+
+If you would like to use your own implementation of assignment 1, replace the `cs336-basics`
+directory with your own implementation, or edit the outer `pyproject.toml` file to point to your
+own implementation.
+
+0. We use `uv` to manage dependencies. You can verify that the code from the `cs336-basics`
+package is accessible by running:
+
+```sh
+$ uv run python
+Using CPython 3.13.13
+Creating virtual environment at: /path/to/uv/env/dir
+      Built cs336-systems @ file:///path/to/systems/dir
+      Built cs336-basics @ file:///path/to/basics/dir
+Installed 78 packages in 168ms
+Python 3.13.13 (main, Apr  7 2026, 20:49:46) [Clang 22.1.1 ] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import cs336_basics
+...
 ```
 
-## Integrate with your tools
+`uv run` installs dependencies automatically as dictated in the `pyproject.toml` file.
 
-- [ ] [Set up project integrations](https://gitlab.pele.local/tommerl/cs336-ex2/-/settings/integrations)
+## Submitting
 
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+To submit, run `./test_and_make_submission.sh` . This script will install your
+code's dependencies, run tests, and create a gzipped tarball with the output. We
+should be able to unzip your submitted tarball and run
+`./test_and_make_submission.sh` to verify your test results.
