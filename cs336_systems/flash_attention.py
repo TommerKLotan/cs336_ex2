@@ -36,6 +36,7 @@ def flash_fwd_kernel(
     D: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
+    is_causal: tl.constexpr,
 ):
     # Program indices
     query_tile_index = tl.program_id(0)
@@ -87,13 +88,19 @@ def flash_fwd_kernel(
         block_shape=(K_TILE_SIZE, D),
         order=(1, 0),
     )
-    for i in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
+    for key_tile_index in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         temp_O_block = tl.zeros((Q_TILE_SIZE, D), Q_block.dtype)
         temp_S_block = tl.zeros((Q_TILE_SIZE, K_TILE_SIZE), Q_block.dtype)
         K_block = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
         V_block = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
         temp_S_block = tl.dot(Q_block, tl.trans(K_block, (1, 0)), acc=temp_S_block)
         S_block = temp_S_block * scale
+        if is_causal:
+            q_range = (query_tile_index * Q_TILE_SIZE) + tl.arange(0, Q_TILE_SIZE)
+            k_range = (key_tile_index * K_TILE_SIZE) + tl.arange(0, K_TILE_SIZE)
+            mask = q_range[:, None] < k_range[None, :]
+            mask_additive_value = tl.where(mask, -1e6, 0)
+            S_block += mask_additive_value
         new_m = tl.maximum(m, tl.max(S_block, axis=-1))
         m_diff_exp = tl.exp(m - new_m)
         m = new_m
@@ -131,6 +138,7 @@ class FlashAttentionTriton(torch.autograd.Function):
         ctx.NUM_QUERIES = Q.shape[1]
         ctx.NUM_KEYS = K.shape[1]
         ctx.DIM = K.shape[2]
+        ctx.is_causal = is_causal
         O = torch.ones((Q.shape), device=Q.device)
         L = torch.empty((Q.shape[:-1]), device=Q.device)
         flash_fwd_kernel[(triton.cdiv(ctx.NUM_QUERIES, ctx.Q_TILE_SIZE), ctx.BATCH_SIZE)](
@@ -159,6 +167,7 @@ class FlashAttentionTriton(torch.autograd.Function):
             tl.constexpr(ctx.DIM),
             ctx.Q_TILE_SIZE,
             ctx.K_TILE_SIZE,
+            tl.constexpr(is_causal),
         )
         ctx.save_for_backward(Q, K, V, L)
         return O
