@@ -1,6 +1,6 @@
 import pytest
 import torch
-from einops import einsum, rearrange
+from einops import einsum
 
 from .adapters import (
     get_flashattention_autograd_function_pytorch,
@@ -16,7 +16,8 @@ def _attention_and_lse(q, k, v, is_causal=False):
     S = einsum(q, k, "... q d, ... k d -> ... q k") * scale
     if is_causal:
         S = torch.where(
-            torch.arange(n_queries, device=S.device)[None, :, None] >= torch.arange(n_keys, device=S.device)[None, None, :],
+            torch.arange(n_queries, device=S.device)[None, :, None]
+            >= torch.arange(n_keys, device=S.device)[None, None, :],
             S,
             -1e6,
         )
@@ -45,7 +46,9 @@ def _test_flash_forward_pass(impl, device="cpu", is_causal=False):
     o = impl(q, k, v, is_causal)
 
     # Extract L from the saved tensors
-    assert o.grad_fn.saved_tensors is not None, "No saved tensors found in the output tensor. Make sure your autograd forward is saving them using ctx.save_for_backward."
+    assert o.grad_fn.saved_tensors is not None, (
+        "No saved tensors found in the output tensor. Make sure your autograd forward is saving them using ctx.save_for_backward."
+    )
     maybe_ls = [t for t in o.grad_fn.saved_tensors if t.shape == (q.shape[0], q.shape[1])]
 
     assert len(maybe_ls) == 1, (
@@ -54,7 +57,6 @@ def _test_flash_forward_pass(impl, device="cpu", is_causal=False):
     l = maybe_ls[0]
 
     o_ref, l_ref = _attention_and_lse(q, k, v, is_causal)
-
     torch.testing.assert_close(o, o_ref, rtol=1e-2, atol=1e-2)
     torch.testing.assert_close(l, l_ref, rtol=1e-2, atol=1e-2)
 
@@ -69,7 +71,9 @@ def test_flash_forward_pass_pytorch():
 )
 @pytest.mark.parametrize("is_causal", [False, True])
 def test_flash_forward_pass_triton(is_causal):
-    _test_flash_forward_pass(get_flashattention_autograd_function_triton().apply, device="cuda", is_causal=is_causal)
+    _test_flash_forward_pass(
+        get_flashattention_autograd_function_triton().apply, device="cuda", is_causal=is_causal
+    )
 
 
 def flash_backward_results(impl, is_causal, device=None):
@@ -79,7 +83,9 @@ def flash_backward_results(impl, is_causal, device=None):
 
 
 def test_flash_backward_pytorch():
-    dq_expected, dk_expected, dv_expected = flash_backward_results(lambda *args: _attention_and_lse(*args)[0], False)
+    dq_expected, dk_expected, dv_expected = flash_backward_results(
+        lambda *args: _attention_and_lse(*args)[0], False
+    )
 
     q, k, v, do = _make_attn_inputs()
     get_flashattention_autograd_function_pytorch().apply(q, k, v, False).backward(do)
@@ -95,7 +101,9 @@ def test_flash_backward_pytorch():
 )
 @pytest.mark.parametrize("is_causal", [False, True])
 def test_flash_backward_triton(is_causal):
-    dq_expected, dk_expected, dv_expected = flash_backward_results(lambda *args: _attention_and_lse(*args)[0], is_causal, device="cuda")
+    dq_expected, dk_expected, dv_expected = flash_backward_results(
+        lambda *args: _attention_and_lse(*args)[0], is_causal, device="cuda"
+    )
 
     q, k, v, do = _make_attn_inputs(device="cuda")
     get_flashattention_autograd_function_triton().apply(q, k, v, is_causal).backward(do)

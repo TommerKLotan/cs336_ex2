@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 
+from cs336_systems import flash_attention
 
 
 def get_flashattention_autograd_function_pytorch() -> type:
@@ -14,7 +15,7 @@ def get_flashattention_autograd_function_pytorch() -> type:
         A class object (not an instance of the class)
     """
     # For example: return MyFlashAttnAutogradFunctionClass
-    raise NotImplementedError
+    return flash_attention.FlashAttentionTriton
 
 
 def get_flashattention_autograd_function_triton() -> type:
@@ -30,7 +31,7 @@ def get_flashattention_autograd_function_triton() -> type:
         A class object (not an instance of the class)
     """
     # For example: return MyTritonFlashAttentionAutogradFunctionClass
-    raise NotImplementedError
+    return flash_attention.FlashAttentionTriton
 
 
 def get_ddp(module: torch.nn.Module) -> torch.nn.Module:
@@ -117,7 +118,9 @@ def fsdp_gather_full_params(fsdp_model: torch.nn.Module) -> dict[str, torch.Tens
     raise NotImplementedError
 
 
-def get_sharded_optimizer(params, optimizer_cls: type[torch.optim.Optimizer], **kwargs) -> torch.optim.Optimizer:
+def get_sharded_optimizer(
+    params, optimizer_cls: type[torch.optim.Optimizer], **kwargs
+) -> torch.optim.Optimizer:
     """
     Returns a torch.optim.Optimizer that handles optimizer state sharding
     of the given optimizer_cls on the provided parameters.

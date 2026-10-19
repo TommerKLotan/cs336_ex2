@@ -3,6 +3,7 @@
 #
 # Usage:
 #   scripts/vast.sh setup [DATASET_NAME]   # copy ex2 + ex1 code and data, install env (safe to re-run)
+#   scripts/vast.sh sync                   # re-upload code only (fast, use after setup)
 #   scripts/vast.sh pull                   # download results/
 #
 # The instance's IP and port are read from vast.conf in the Onboarding directory:
@@ -22,7 +23,7 @@ LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_BASICS_DIR="$(cd "$LOCAL_DIR/../cs336-ex1" && pwd)"
 
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit 1
 }
 
@@ -40,13 +41,29 @@ PORT="${VAST_PORT:-}"
 [[ -n "$IP" && -n "$PORT" ]] || { echo "Set VAST_IP and VAST_PORT in $CONFIG_FILE" >&2; exit 1; }
 
 # New vast hosts have unknown host keys; accept them on first connect.
-SSH=(ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30)
+# ControlMaster reuses one connection for all ssh/rsync calls (and for 5 min after), skipping repeated handshakes.
+SSH=(
+    ssh -p "$PORT" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30
+    -o ControlMaster=auto -o ControlPath="$HOME/.ssh/cm-vast-%C" -o ControlPersist=300
+)
 RSYNC=(rsync -az --info=progress2 -e "${SSH[*]}")
 HOST="root@$IP"
 COMMON_EXCLUDES=(
     --exclude .git --exclude .venv --exclude __pycache__
     --exclude .pytest_cache --exclude .ruff_cache --exclude '*.pdf'
 )
+
+sync_code() {
+    echo ">> Syncing ex2 code"
+    "${RSYNC[@]}" "${COMMON_EXCLUDES[@]}" --exclude results \
+        "$LOCAL_DIR/" "$HOST:$REMOTE_DIR/"
+
+    # Tokenizers are needed for vocab size; tokenized data is sent separately in setup.
+    echo ">> Syncing ex1 code and tokenizer"
+    "${RSYNC[@]}" "${COMMON_EXCLUDES[@]}" \
+        --exclude data --exclude models --exclude logs --exclude tokenized_data \
+        "$LOCAL_BASICS_DIR/" "$HOST:$REMOTE_BASICS_DIR/"
+}
 
 setup() {
     local train="$LOCAL_BASICS_DIR/tokenized_data/$DATASET-train.npy"
@@ -62,15 +79,7 @@ command -v rsync >/dev/null || (apt-get update -qq && apt-get install -y -qq rsy
 mkdir -p $REMOTE_DIR $REMOTE_BASICS_DIR/tokenized_data
 EOF
 
-    echo ">> Syncing ex2 code"
-    "${RSYNC[@]}" "${COMMON_EXCLUDES[@]}" --exclude results \
-        "$LOCAL_DIR/" "$HOST:$REMOTE_DIR/"
-
-    # Tokenizers are needed for vocab size; tokenized data is sent separately below.
-    echo ">> Syncing ex1 code and tokenizer"
-    "${RSYNC[@]}" "${COMMON_EXCLUDES[@]}" \
-        --exclude data --exclude models --exclude logs --exclude tokenized_data \
-        "$LOCAL_BASICS_DIR/" "$HOST:$REMOTE_BASICS_DIR/"
+    sync_code
 
     # --partial so an interrupted multi-GB upload resumes instead of restarting.
     echo ">> Syncing dataset $DATASET"
@@ -109,6 +118,7 @@ pull() {
 
 case "$CMD" in
     setup) setup ;;
+    sync) sync_code ;;
     pull) pull ;;
     *) usage ;;
 esac
