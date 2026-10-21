@@ -55,7 +55,7 @@ def get_ddp(module: torch.nn.Module) -> torch.nn.Module:
     return ddp.DDP(module)
 
 
-def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def ddp_on_after_backward(ddp_model: ddp.DDP, optimizer: torch.optim.Optimizer):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
@@ -67,7 +67,7 @@ def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Opt
             Optimizer being used with the DDP-wrapped model.
     """
     # For example: ddp_model.finish_gradient_synchronization()
-    return ddp.ddp_on_after_backward(ddp_model, optimizer)
+    return ddp_model.ddp_on_after_backward(optimizer)
 
 
 def get_fsdp(module: torch.nn.Module, compute_dtype: torch.dtype | None = None) -> torch.nn.Module:

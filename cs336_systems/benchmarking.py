@@ -78,8 +78,8 @@ def _setup_process_group(rank, world_size, backend):
     return device
 
 
-def parallelize_model(model: torch.nn.Module):
-    return ddp.DDP(model)
+def parallelize_model(model: torch.nn.Module, parallel_mode):
+    return ddp.DDP(model, parallel_mode)
 
 
 def parallelization_wraper(
@@ -92,12 +92,13 @@ def parallelization_wraper(
     do_backwards,
     do_optim_step,
     profile_memory,
+    parallel_mode,
     output_queue,
     kwargs,
 ):
     device = _setup_process_group(rank, world_size, BACKEND)
     model = TransformerLM(vocab_size=vocab_size, **kwargs).to(device)
-    model = parallelize_model(model)
+    model = parallelize_model(model, parallel_mode)
     optimizer = AdamW(model.parameters(), **kwargs)
 
     def do_step():
@@ -110,7 +111,7 @@ def parallelization_wraper(
         if do_backwards:
             with nvtx.range("backward"):
                 loss.backward()
-                ddp.ddp_on_after_backward(model, optimizer)
+                model.ddp_on_after_backward(optimizer)
                 if do_optim_step:
                     with nvtx.range("step"):
                         optimizer.step()
@@ -148,6 +149,7 @@ def benchmark_transformer(
     do_backwards: bool = True,
     do_optim_step: bool = True,
     world_size: int = 2,
+    parallel_mode: str = "naive_ddp",
     **kwargs,
 ):
     add_nvtx_label_to_attention()
@@ -166,6 +168,7 @@ def benchmark_transformer(
             do_backwards,
             do_optim_step,
             profile_memory,
+            parallel_mode,
             output_queue,
             kwargs,
         ),
@@ -177,6 +180,8 @@ def benchmark_transformer(
         {
             "World Size": [world_size],
             "Vocab Size": [vocab_size],
+            "Parallel Mode": [parallel_mode],
+            "Num Iters": [num_iters],
             "Mean Iter Time": [mean],
             "Iter Time STD": [std],
         }

@@ -1,5 +1,6 @@
 import torch
 import torch.distributed as dist
+from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 
 MASTER_RANK = 0
 
@@ -7,28 +8,57 @@ MASTER_RANK = 0
 def wait_on_handles(handles):
     for handle in handles:
         handle.wait()
+    handles.clear()
 
 
 class DDP(torch.nn.Module):
-    def __init__(self, module: torch.nn.Module):
+    def __init__(self, module: torch.nn.Module, mode="flatten_ddp"):
         super().__init__()
         self.module = module
+        self.mode = mode
+        self.handles = list()
         handles = [
             dist.broadcast(param.data, MASTER_RANK, async_op=True)
-            for param_name, param in module.named_parameters()
-            if "no_grad_fixed_param" not in param_name
+            for param in self._get_shared_params()
         ]
         wait_on_handles(handles)
+
+        if self.mode == "grad_hook_ddp":
+            self._register_grad_hooks()
+
+    def _get_grad_params(self):
+        return [param for param in self._get_shared_params() if param.requires_grad]
+
+    def _get_shared_params(self):
+        return [
+            param
+            for param_name, param in self.module.named_parameters()
+            if "no_grad_fixed_param" not in param_name
+        ]
+
+    def _register_grad_hooks(self):
+        def grad_hook(param):
+            self.handles.append(dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, async_op=True))
+
+        for param in self._get_grad_params():
+            param.register_post_accumulate_grad_hook(grad_hook)
 
     def forward(self, data):
         output = self.module(data)
         return output
 
-
-def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
-    handles = [
-        dist.all_reduce(param.grad, op=dist.ReduceOp.AVG, async_op=True)
-        for param_name, param in ddp_model.module.named_parameters()
-        if "no_grad_fixed_param" not in param_name and param.grad is not None
-    ]
-    wait_on_handles(handles)
+    def ddp_on_after_backward(self, optimizer: torch.optim.Optimizer):
+        grad_tensors = [p.grad for p in self._get_grad_params()]
+        if self.mode == "naive_ddp":
+            handles = [
+                dist.all_reduce(grad, op=dist.ReduceOp.AVG, async_op=True) for grad in grad_tensors
+            ]
+            wait_on_handles(handles)
+        elif self.mode == "flatten_ddp":
+            flattened = _flatten_dense_tensors(grad_tensors)
+            dist.all_reduce(flattened, op=dist.ReduceOp.AVG, async_op=False)
+            new_grad_tensors = _unflatten_dense_tensors(flattened, grad_tensors)
+            for grad, new_grad in zip(grad_tensors, new_grad_tensors):
+                grad.copy_(new_grad)
+        elif self.mode == "grad_hook_ddp":
+            wait_on_handles(self.handles)
