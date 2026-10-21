@@ -3,7 +3,7 @@
 #
 # Usage:
 #   scripts/vast.sh setup [DATASET_NAME]   # copy ex2 + ex1 code and data, install env (safe to re-run)
-#   scripts/vast.sh sync                   # re-upload code only (fast, use after setup)
+#   scripts/vast.sh sync                   # re-upload ex2 code only (fast, use after setup)
 #   scripts/vast.sh pull                   # download results/
 #
 # The instance's IP and port are read from vast.conf in the Onboarding directory:
@@ -53,11 +53,13 @@ COMMON_EXCLUDES=(
     --exclude .pytest_cache --exclude .ruff_cache --exclude '*.pdf'
 )
 
-sync_code() {
+sync_ex2() {
     echo ">> Syncing ex2 code"
     "${RSYNC[@]}" "${COMMON_EXCLUDES[@]}" --exclude results \
         "$LOCAL_DIR/" "$HOST:$REMOTE_DIR/"
+}
 
+sync_ex1() {
     # Tokenizers are needed for vocab size; tokenized data is sent separately in setup.
     echo ">> Syncing ex1 code and tokenizer"
     "${RSYNC[@]}" "${COMMON_EXCLUDES[@]}" \
@@ -79,7 +81,8 @@ command -v rsync >/dev/null || (apt-get update -qq && apt-get install -y -qq rsy
 mkdir -p $REMOTE_DIR $REMOTE_BASICS_DIR/tokenized_data
 EOF
 
-    sync_code
+    sync_ex2
+    sync_ex1
 
     # --partial so an interrupted multi-GB upload resumes instead of restarting.
     echo ">> Syncing dataset $DATASET"
@@ -118,7 +121,7 @@ pull() {
 
 case "$CMD" in
     setup) setup ;;
-    sync) sync_code ;;
+    sync) sync_ex2 ;;
     pull) pull ;;
     *) usage ;;
 esac

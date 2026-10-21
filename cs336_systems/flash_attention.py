@@ -69,9 +69,9 @@ def flash_fwd_kernel(
         order=(0,),
     )
 
-    O_block = tl.zeros((Q_TILE_SIZE, D), Q_block.dtype)
-    l = tl.zeros((Q_TILE_SIZE,), Q_block.dtype)
-    m = tl.full((Q_TILE_SIZE,), float("-inf"), Q_block.dtype)
+    O_block = tl.zeros((Q_TILE_SIZE, D), tl.float32)
+    l = tl.zeros((Q_TILE_SIZE,), tl.float32)
+    m = tl.full((Q_TILE_SIZE,), float("-inf"), tl.float32)
     K_block_ptr = tl.make_block_ptr(
         K_ptr + batch_index * stride_kb,
         shape=(N_KEYS, D),
@@ -88,26 +88,24 @@ def flash_fwd_kernel(
         block_shape=(K_TILE_SIZE, D),
         order=(1, 0),
     )
-    for key_tile_index in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
-        temp_O_block = tl.zeros((Q_TILE_SIZE, D), Q_block.dtype)
-        temp_S_block = tl.zeros((Q_TILE_SIZE, K_TILE_SIZE), Q_block.dtype)
+    max_key = tl.maximum((query_tile_index + 1) * Q_TILE_SIZE, N_KEYS) if is_causal else N_KEYS
+    for key_tile_index in range(tl.cdiv(max_key, K_TILE_SIZE)):
         K_block = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
         V_block = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
-        temp_S_block = tl.dot(Q_block, tl.trans(K_block, (1, 0)), acc=temp_S_block)
-        S_block = temp_S_block * scale
+        S_block = tl.dot(Q_block, tl.trans(K_block, (1, 0))) * scale
+        q_range = (query_tile_index * Q_TILE_SIZE) + tl.arange(0, Q_TILE_SIZE)
+        k_range = (key_tile_index * K_TILE_SIZE) + tl.arange(0, K_TILE_SIZE)
+        mask = (k_range < N_KEYS)[None, :]
         if is_causal:
-            q_range = (query_tile_index * Q_TILE_SIZE) + tl.arange(0, Q_TILE_SIZE)
-            k_range = (key_tile_index * K_TILE_SIZE) + tl.arange(0, K_TILE_SIZE)
-            mask = q_range[:, None] < k_range[None, :]
-            mask_additive_value = tl.where(mask, -1e6, 0)
-            S_block += mask_additive_value
+            mask &= q_range[:, None] >= k_range[None, :]
+        S_block = tl.where(mask, S_block, -1e6)
         new_m = tl.maximum(m, tl.max(S_block, axis=-1))
         m_diff_exp = tl.exp(m - new_m)
         m = new_m
         P_block = tl.exp(S_block - new_m[:, None])
         l = m_diff_exp * l + tl.sum(P_block, axis=-1)
-        temp_O_block = tl.dot(P_block.to(V_block.dtype), V_block, acc=temp_O_block)
-        O_block = O_block * m_diff_exp[:, None] + temp_O_block
+        O_block *= m_diff_exp[:, None]
+        O_block = tl.dot(P_block.to(V_block.dtype), V_block, acc=O_block)
         # Advance blocks
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
@@ -116,7 +114,7 @@ def flash_fwd_kernel(
     l = m + tl.log(l)
 
     tl.store(O_block_ptr, O_block.to(O_block_ptr.type.element_ty), boundary_check=(0, 1))
-    tl.store(L_block_ptr, l, boundary_check=(0))
+    tl.store(L_block_ptr, l, boundary_check=(0,))
 
 
 class FlashAttentionTriton(torch.autograd.Function):
@@ -139,7 +137,7 @@ class FlashAttentionTriton(torch.autograd.Function):
         ctx.NUM_KEYS = K.shape[1]
         ctx.DIM = K.shape[2]
         ctx.is_causal = is_causal
-        O = torch.ones((Q.shape), device=Q.device)
+        O = torch.empty_like(Q)
         L = torch.empty((Q.shape[:-1]), device=Q.device)
         flash_fwd_kernel[(triton.cdiv(ctx.NUM_QUERIES, ctx.Q_TILE_SIZE), ctx.BATCH_SIZE)](
             Q,
