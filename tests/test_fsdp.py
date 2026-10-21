@@ -201,7 +201,7 @@ def test_fsdp_gradient_sync(compute_dtype):
 
 
 def _test_fsdp_gradient_sync(rank: int, world_size: int, compute_dtype):
-    from cs336_basics.model import Embedding, Linear
+    from cs336_basics.model import EmbeddingLayer, LinearLayer
 
     torch.use_deterministic_algorithms(True)
     device = _setup_process_group(rank=rank, world_size=world_size, backend="gloo")
@@ -228,16 +228,24 @@ def _test_fsdp_gradient_sync(rank: int, world_size: int, compute_dtype):
     for name, param in fsdp_model.module.named_parameters():
         if param.requires_grad:
             assert param.grad is not None, f"Gradient is None for {name}"
-            assert param.grad.shape == param.data.shape, f"Gradient shape {param.grad.shape} != data shape {param.data.shape} for {name}"
-            assert param.grad.dtype == param.data.dtype, f"Gradient dtype {param.grad.dtype} != data dtype {param.data.dtype} for {name}"
+            assert param.grad.shape == param.data.shape, (
+                f"Gradient shape {param.grad.shape} != data shape {param.data.shape} for {name}"
+            )
+            assert param.grad.dtype == param.data.dtype, (
+                f"Gradient dtype {param.grad.dtype} != data dtype {param.data.dtype} for {name}"
+            )
 
     # Replicated (non-FSDP) parameter gradients must be identical across ranks
     for name, param in fsdp_model.module.named_parameters():
         if not param.requires_grad:
             continue
         parts = name.rsplit(".", 1)
-        mod = dict(fsdp_model.module.named_modules())[parts[0]] if len(parts) == 2 else fsdp_model.module
-        if isinstance(mod, (Linear, Embedding)):
+        mod = (
+            dict(fsdp_model.module.named_modules())[parts[0]]
+            if len(parts) == 2
+            else fsdp_model.module
+        )
+        if isinstance(mod, (LinearLayer, EmbeddingLayer)):
             continue
         gathered = [torch.zeros_like(param.grad) for _ in range(world_size)]
         dist.all_gather(gathered, param.grad)

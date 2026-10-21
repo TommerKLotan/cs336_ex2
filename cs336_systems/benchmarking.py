@@ -78,8 +78,19 @@ def _setup_process_group(rank, world_size, backend):
     return device
 
 
-def parallelize_model(model: torch.nn.Module, parallel_mode):
-    return ddp.DDP(model, parallel_mode)
+def parallelize_model(model: torch.nn.Module, parallel_mode, **kwargs):
+    optim_shard = False
+    if "optim-shard" in parallel_mode:
+        optim_shard = True
+        parallel_mode = parallel_mode.split("_", 1)[1]
+    model = ddp.DDP(model, parallel_mode)
+
+    if optim_shard:
+        optimizer = ddp.ShardedOptimizer(model.parameters(), AdamW, **kwargs)
+    else:
+        optimizer = AdamW(model.parameters(), **kwargs)
+
+    return model, optimizer
 
 
 def parallelization_wraper(
@@ -98,8 +109,7 @@ def parallelization_wraper(
 ):
     device = _setup_process_group(rank, world_size, BACKEND)
     model = TransformerLM(vocab_size=vocab_size, **kwargs).to(device)
-    model = parallelize_model(model, parallel_mode)
-    optimizer = AdamW(model.parameters(), **kwargs)
+    model, optimizer = parallelize_model(model, parallel_mode, **kwargs)
 
     def do_step():
         optimizer.zero_grad()
@@ -122,21 +132,33 @@ def parallelization_wraper(
             do_step()
     measurements = []
     if profile_memory:
+        torch.cuda.memory.reset_peak_memory_stats()
         torch.cuda.memory._record_memory_history(max_entries=1_000_000, stacks="python")
     with nvtx.range("measure"):
         for _ in tqdm(range(num_iters), desc="Measurment iters"):
-            start_time = timeit.default_timer()
             dist.barrier()
+            start_time = timeit.default_timer()
             do_step()
+            torch.cuda.synchronize()
             dist.barrier()
             end_time = timeit.default_timer()
             measurements.append(end_time - start_time)
     if profile_memory:
         torch.cuda.memory._dump_snapshot(str(REPORTS_DIR / "memory.pickle"))
-        torch.cuda.memory._record_memory_history(enabled=None)
+        if rank == 0:
+            torch.cuda.memory._record_memory_history(enabled=None)
+        max_mem = torch.tensor([torch.cuda.max_memory_allocated() / 2**30], device=device)
+        dist.reduce(
+            max_mem,
+            0,
+            dist.ReduceOp.MAX,
+        )
+        max_mem = max_mem.item()
+    else:
+        max_mem = None
     if rank == 0:
         measurements = np.array(measurements)
-        output_queue.put((measurements.mean(), measurements.std()))
+        output_queue.put((measurements.mean(), measurements.std(), max_mem))
 
 
 @with_model_and_optim_params
@@ -152,6 +174,7 @@ def benchmark_transformer(
     parallel_mode: str = "naive_ddp",
     **kwargs,
 ):
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     add_nvtx_label_to_attention()
     assert world_size <= MAX_WORLD_SIZE
     batch_size = batch_size // world_size
@@ -175,7 +198,7 @@ def benchmark_transformer(
         nprocs=world_size,
         join=True,
     )
-    mean, std = output_queue.get()
+    mean, std, max_mem = output_queue.get()
     stats = pd.DataFrame(
         {
             "World Size": [world_size],
@@ -184,9 +207,10 @@ def benchmark_transformer(
             "Num Iters": [num_iters],
             "Mean Iter Time": [mean],
             "Iter Time STD": [std],
+            "Max Mem (GiB)": [max_mem],
         }
     )
-    print(stats)
+    print(stats.to_string())
 
 
 if __name__ == "__main__":

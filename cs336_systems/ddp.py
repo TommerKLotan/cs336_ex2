@@ -114,7 +114,6 @@ class ShardedOptimizer(torch.optim.Optimizer):
                 for p in param_group["params"]:
                     shard = self._get_param_shard(p)
                     handles.append(dist.all_gather_into_tensor(p.view(-1), shard, async_op=True))
-                    wait_on_handles(handles)
         wait_on_handles(handles)
 
     def _shard_group(self, param_group):
