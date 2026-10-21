@@ -67,7 +67,7 @@ def ddp_on_after_backward(ddp_model: ddp.DDP, optimizer: torch.optim.Optimizer):
             Optimizer being used with the DDP-wrapped model.
     """
     # For example: ddp_model.finish_gradient_synchronization()
-    return ddp_model.ddp_on_after_backward(optimizer)
+    return ddp_model.finish_gradient_synchronization(optimizer)
 
 
 def get_fsdp(module: torch.nn.Module, compute_dtype: torch.dtype | None = None) -> torch.nn.Module:
@@ -136,4 +136,4 @@ def get_sharded_optimizer(
     Returns:
         Instance of sharded optimizer.
     """
-    raise NotImplementedError
+    return ddp.ShardedOptimizer(params, optimizer_cls, **kwargs)

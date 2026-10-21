@@ -111,7 +111,7 @@ def parallelization_wraper(
         if do_backwards:
             with nvtx.range("backward"):
                 loss.backward()
-                model.ddp_on_after_backward(optimizer)
+                model.finish_gradient_synchronization(optimizer)
                 if do_optim_step:
                     with nvtx.range("step"):
                         optimizer.step()
